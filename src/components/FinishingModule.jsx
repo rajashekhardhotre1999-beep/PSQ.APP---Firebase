@@ -4,8 +4,7 @@ import ConsumptionPanel from "./ConsumptionPanel.jsx";
 import { C, LBL, INP, FIN_META, CONSUMPTION_ENABLED } from "./shared.jsx";
 import { Inp, DropSel, CoatStepper } from "./shared.jsx";
 
-export default function FinishingModule({ finishing, onChange, net, visibleKeys=null, showNetLabel=true, rateLocked=false, isAdmin=false }) {
-  const rateDisabled = rateLocked && !isAdmin;
+export default function FinishingModule({ finishing, onChange, net, visibleKeys=null, showNetLabel=true }) {
   const [openMap,setOpenMap]=useState({});
   const tog=k=>setOpenMap(p=>({...p,[k]:!p[k]}));
   const upF=(k,f,v)=>onChange({...finishing,[k]:{...finishing[k],[f]:v}});
@@ -45,7 +44,6 @@ export default function FinishingModule({ finishing, onChange, net, visibleKeys=
           </div>
           {!f.useRoom&&<div style={{marginBottom:10}}><span style={LBL}>CUSTOM AREA (sf)</span><NumInp small value={f.area||0} onChange={v=>upF(key,"area",v)}/></div>}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div><span style={LBL}>RATE (₹/sf){rateDisabled&&" 🔒"}</span><NumInp small prefix="₹" value={f.rate||0} onChange={v=>upF(key,"rate",v)} disabled={rateDisabled}/></div>
             <div><span style={LBL}>{key==="wallpaper"?"INSTALL (₹/sf)":"COATS"}</span>
               {key==="wallpaper"?<NumInp small prefix="₹" value={f.installRate||0} onChange={v=>upF(key,"installRate",v)}/>:<CoatStepper value={f.coats||1} onChange={v=>upF(key,"coats",v)}/>}
             </div>

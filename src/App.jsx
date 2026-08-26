@@ -7,30 +7,12 @@ import MeasurementView from "./components/MeasurementView.jsx";
 import InvoiceModal from "./components/InvoiceModal.jsx";
 import MasterRatesModal from "./components/MasterRatesModal.jsx";
 import { getStoredMasterRates, saveMasterRates, getRateForFinish } from "./data/finishMasterRates.ts";
-import { verifySupervisorPin } from "./data/supervisorPin.ts";
 
-// ── Master-rate sync: when a finish rate changes in Unlocked mode, persist it
-//    to the localStorage master so it becomes the new default everywhere.
-//    Maps the interior FinishingModule sub-category key to the master category.
+// Maps the interior FinishingModule sub-category key to the master category.
 const FIN_CATEGORY_MAP = {
   putty:"interior", primer:"interior", paint:"interior", topcoat:"interior",
   oilPaint:"woodMetal", polish:"woodMetal", texture:"texture", wallpaper:"wallpaper",
 };
-function persistFinishRate(subKey, tierId, newRate) {
-  const catKey = FIN_CATEGORY_MAP[subKey];
-  if (!catKey || tierId === "custom") return;
-  try {
-    const rates = getStoredMasterRates();
-    const cat = rates.find(c => c.key === catKey);
-    if (!cat) return;
-    for (const sub of cat.subCategories) {
-      if (sub.key !== subKey) continue;
-      const tier = sub.tiers.find(t => t.id === tierId);
-      if (tier) { tier.r = newRate; saveMasterRates(rates); }
-      return;
-    }
-  } catch {}
-}
 
 // ─── CONSTANTS ────────────────────────────────────────────────────
 // Logo rendered as inline SVG — no external file dependency
@@ -975,61 +957,19 @@ function ConsumptionPanel({ f, net, onChange }) {
   </div>;
 }
 
-// ─── PIN ENTRY MODAL (rate-lock unlock) ──────────────────────────
-function PinEntryModal({ onSuccess, onClose }) {
-  const [pin, setPin] = useState("");
-  const [err, setErr] = useState("");
-  const inputRef = useRef(null);
-  useEffect(() => { inputRef.current?.focus(); }, []);
-  const submit = () => {
-    if (verifySupervisorPin(pin)) { onSuccess(); }
-    else { setErr("Incorrect PIN. Try again."); setPin(""); inputRef.current?.focus(); }
-  };
-  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}>
-    <div onClick={e=>e.stopPropagation()} style={{background:C.white,borderRadius:16,padding:"28px 24px",width:"100%",maxWidth:320,boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
-      <div style={{textAlign:"center",marginBottom:18}}>
-        <div style={{fontSize:36,marginBottom:8}}>🔒</div>
-        <div style={{fontSize:16,fontWeight:800,color:C.navy}}>Enter PIN to Unlock</div>
-        <div style={{fontSize:11,color:C.gray,marginTop:4}}>Enter the security PIN to edit finish rates.</div>
-      </div>
-      <input
-        ref={inputRef}
-        type="password"
-        inputMode="numeric"
-        value={pin}
-        onChange={e=>{ setErr(""); setPin(e.target.value.replace(/[^0-9]/g,"").slice(0,4)); }}
-        onKeyDown={e=>{ if(e.key==="Enter") submit(); }}
-        placeholder="••••"
-        maxLength={4}
-        style={{...INP,textAlign:"center",fontSize:24,letterSpacing:"0.5em",fontWeight:800}}
-        onFocus={e=>e.target.style.borderColor=C.orange}
-        onBlur={e=>e.target.style.borderColor=C.border}
-      />
-      {err && <div style={{fontSize:11,color:C.red,fontWeight:700,textAlign:"center",marginTop:8}}>{err}</div>}
-      <div style={{display:"flex",gap:10,marginTop:18}}>
-        <button onClick={onClose} style={{flex:1,padding:"12px",background:"#F0F4F8",color:C.navy,border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer"}}>Cancel</button>
-        <button onClick={submit} style={{flex:1,padding:"12px",background:C.navy,color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer"}}>Unlock</button>
-      </div>
-    </div>
-  </div>;
-}
-
 // ─── INTERIOR FINISHING MODULE ────────────────────────────────────
-function FinishingModule({ finishing, onChange, net, visibleKeys=null, showNetLabel=true, locked=false }) {
+function FinishingModule({ finishing, onChange, net, visibleKeys=null, showNetLabel=true }) {
   const [openMap,setOpenMap]=useState({});
   const tog=k=>setOpenMap(p=>({...p,[k]:!p[k]}));
-  const upF=(k,f,v)=>{ if(locked) return; onChange({...finishing,[k]:{...finishing[k],[f]:v}}); };
+  const upF=(k,f,v)=>onChange({...finishing,[k]:{...finishing[k],[f]:v}});
   const finMeta=getFinMeta();
   const changeType=(k,typeId)=>{
-    if(locked) return;
     const types=finMeta[k]?.types||[];
     const t=types.find(x=>x.id===typeId)||types[0];
     const catKey=FIN_CATEGORY_MAP[k]||"interior";
     const masterRate=getRateForFinish(catKey,typeId,k);
     onChange({...finishing,[k]:{...finishing[k],type:typeId,rate:masterRate||t?.r||0}});
   };
-  // When a rate is edited in Unlocked mode, persist to master rates.
-  const upFRate=(k,v)=>{ if(locked) return; const f=finishing[k]||{}; onChange({...finishing,[k]:{...f,rate:v}}); persistFinishRate(k,f.type,v); };
   const finMetaEntries=Object.entries(finMeta).filter(([key])=>!visibleKeys||visibleKeys.includes(key));
   return <div>
     {showNetLabel&&<div style={{fontSize:12,color:"#aaa",marginBottom:12}}>Net area: <b style={{color:C.orange}}>{net.toFixed(2)} sq ft</b></div>}
@@ -1041,8 +981,8 @@ function FinishingModule({ finishing, onChange, net, visibleKeys=null, showNetLa
       const cost=(f.rate||0)*(f.coats||1)*area+(key==="wallpaper"?(f.installRate||0)*area:0);
       const isOpen=openMap[key];
       return <div key={key} style={{borderRadius:12,border:`1.5px solid ${f.on?C.orange:C.border}`,marginBottom:8,overflow:"hidden"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",background:f.on?C.orangeL:C.white,cursor:locked?"not-allowed":"pointer"}} onClick={()=>{if(locked)return;if(!f.on)upF(key,"on",true);tog(key);}}>
-          <input type="checkbox" checked={!!f.on} disabled={locked} onChange={e=>{e.stopPropagation();upF(key,"on",e.target.checked);}} style={{width:16,height:16,accentColor:C.orange,cursor:locked?"not-allowed":"pointer",flexShrink:0}}/>
+        <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",background:f.on?C.orangeL:C.white,cursor:"pointer"}} onClick={()=>{if(!f.on)upF(key,"on",true);tog(key);}}>
+          <input type="checkbox" checked={!!f.on} onChange={e=>{e.stopPropagation();upF(key,"on",e.target.checked);}} style={{width:16,height:16,accentColor:C.orange,cursor:"pointer",flexShrink:0}}/>
           <span style={{fontSize:17}}>{cfg.icon}</span>
           <div style={{flex:1}}>
             <div style={{fontSize:13,fontWeight:800,color:f.on?C.navy:"#aaa"}}>{cfg.label}</div>
@@ -1053,21 +993,20 @@ function FinishingModule({ finishing, onChange, net, visibleKeys=null, showNetLa
         {f.on&&isOpen&&<div style={{padding:"12px 14px",background:C.white,borderTop:`1px solid ${C.border}`}}>
           {key==="wallpaper"
             ?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-              <Inp label="Type / Design" value={f.type||""} onChange={v=>upF(key,"type",v)} placeholder="e.g. Floral" disabled={locked}/>
-              <Inp label="Roll Size" value={f.rollSize||""} onChange={v=>upF(key,"rollSize",v)} placeholder="e.g. 10m×0.53m" disabled={locked}/>
+              <Inp label="Type / Design" value={f.type||""} onChange={v=>upF(key,"type",v)} placeholder="e.g. Floral"/>
+              <Inp label="Roll Size" value={f.rollSize||""} onChange={v=>upF(key,"rollSize",v)} placeholder="e.g. 10m×0.53m"/>
             </div>
-            :types.length>0&&<DropSel label="Type / Variant" value={f.type||types[0]?.id} onChange={v=>changeType(key,v)} options={types.map(t=>({value:t.id,label:t.label+(t.base?` (${t.base==="water"?"Water":"Oil"}-based)`:"")})) } style={{marginBottom:10}} disabled={locked}/>}
-          {(f.type==="custom"||key==="wallpaper")&&<div style={{marginBottom:10}}><Inp label="Material Name" value={f.customName||""} onChange={v=>upF(key,"customName",v)} placeholder="Enter name..." disabled={locked}/></div>}
+            :types.length>0&&<DropSel label="Type / Variant" value={f.type||types[0]?.id} onChange={v=>changeType(key,v)} options={types.map(t=>({value:t.id,label:t.label+(t.base?` (${t.base==="water"?"Water":"Oil"}-based)`:"")})) } style={{marginBottom:10}}/>}
+          {(f.type==="custom"||key==="wallpaper")&&<div style={{marginBottom:10}}><Inp label="Material Name" value={f.customName||""} onChange={v=>upF(key,"customName",v)} placeholder="Enter name..."/></div>}
           {selT?.base&&<div style={{background:selT.base==="water"?C.blueL:"#FFF7ED",borderRadius:8,padding:"5px 10px",marginBottom:10,fontSize:11,color:selT.base==="water"?C.blue:C.gold,fontWeight:600}}>{selT.base==="water"?"💧 Water-Based":"🛢 Oil-Based"}</div>}
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
             <span style={{fontSize:11,color:"#555",fontWeight:600}}>Area:</span>
-            {["Room Net","Custom"].map((lbl,i)=><button key={lbl} disabled={locked} onClick={()=>upF(key,"useRoom",i===0)} style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,border:`1.5px solid ${(i===0?f.useRoom:!f.useRoom)?C.navy:C.border}`,background:(i===0?f.useRoom:!f.useRoom)?C.navy:C.white,color:(i===0?f.useRoom:!f.useRoom)?"#fff":"#888",cursor:locked?"not-allowed":"pointer",opacity:locked?0.6:1}}>{lbl}</button>)}
+            {["Room Net","Custom"].map((lbl,i)=><button key={lbl} onClick={()=>upF(key,"useRoom",i===0)} style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,border:`1.5px solid ${(i===0?f.useRoom:!f.useRoom)?C.navy:C.border}`,background:(i===0?f.useRoom:!f.useRoom)?C.navy:C.white,color:(i===0?f.useRoom:!f.useRoom)?"#fff":"#888",cursor:"pointer"}}>{lbl}</button>)}
           </div>
-          {!f.useRoom&&<div style={{marginBottom:10}}><span style={LBL}>CUSTOM AREA (sf)</span><NumInp small value={f.area||0} onChange={v=>upF(key,"area",v)} disabled={locked}/></div>}
+          {!f.useRoom&&<div style={{marginBottom:10}}><span style={LBL}>CUSTOM AREA (sf)</span><NumInp small value={f.area||0} onChange={v=>upF(key,"area",v)}/></div>}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div><span style={LBL}>RATE (₹/sf){locked?" 🔒":""}</span><NumInp small prefix="₹" value={f.rate||0} onChange={v=>upFRate(key,v)} disabled={locked}/></div>
             <div><span style={LBL}>{key==="wallpaper"?"INSTALL (₹/sf)":"COATS"}</span>
-              {key==="wallpaper"?<NumInp small prefix="₹" value={f.installRate||0} onChange={v=>upF(key,"installRate",v)} disabled={locked}/>:<CoatStepper value={f.coats||1} onChange={v=>upF(key,"coats",v)} disabled={locked}/>}
+              {key==="wallpaper"?<NumInp small prefix="₹" value={f.installRate||0} onChange={v=>upF(key,"installRate",v)}/>:<CoatStepper value={f.coats||1} onChange={v=>upF(key,"coats",v)}/>}
             </div>
           </div>
           <div style={{background:C.orangeL,borderRadius:8,padding:"8px 12px",marginTop:10,display:"flex",justifyContent:"space-between"}}>
@@ -1082,13 +1021,12 @@ function FinishingModule({ finishing, onChange, net, visibleKeys=null, showNetLa
 }
 
 // ─── EXTERIOR FINISHING MODULE ────────────────────────────────────
-function ExteriorFinishingModule({ finishing, onChange, net, locked=false }) {
+function ExteriorFinishingModule({ finishing, onChange, net }) {
   const [openMap,setOpenMap]=useState({});
   const tog=k=>setOpenMap(p=>({...p,[k]:!p[k]}));
-  const upF=(k,f,v)=>{ if(locked) return; onChange({...finishing,[k]:{...finishing[k],[f]:v}}); };
+  const upF=(k,f,v)=>onChange({...finishing,[k]:{...finishing[k],[f]:v}});
   const extFinMeta=getExtFinMeta();
   const changeType=(k,typeId)=>{
-    if(locked) return;
     const types=extFinMeta[k]?.types||[];
     const t=types.find(x=>x.id===typeId)||types[0];
     const masterRate=getRateForFinish("exterior",typeId,k);
@@ -1105,17 +1043,16 @@ function ExteriorFinishingModule({ finishing, onChange, net, locked=false }) {
         const selT=types.find(t=>t.id===f.type)||types[0];
         const area=f.useRoom?net:(f.area||0);
         const cost=(f.rate||0)*(f.coats||1)*area;
-        return <button key={key} onClick={()=>{if(locked)return;if(!f.on)upF(key,"on",true);tog(key);}} style={{
-            textAlign:"left",cursor:locked?"not-allowed":"pointer",position:"relative",
+        return <button key={key} onClick={()=>{if(!f.on)upF(key,"on",true);tog(key);}} style={{
+            textAlign:"left",cursor:"pointer",position:"relative",
             borderRadius:12,padding:"14px 14px 12px",
             border:`1.5px solid ${f.on?C.teal:C.border}`,
             background:f.on?"#F0FDFA":C.white,
             boxShadow:f.on?"0 2px 8px rgba(13,148,136,0.10)":"none",
             transition:"all 0.15s",
-            opacity:locked?0.7:1,
           }}>
-          <span onClick={e=>{e.stopPropagation();if(!locked)upF(key,"on",!f.on);}} style={{
-              position:"absolute",top:10,right:10,width:18,height:18,borderRadius:"50%",cursor:locked?"not-allowed":"pointer",
+          <span onClick={e=>{e.stopPropagation();upF(key,"on",!f.on);}} style={{
+              position:"absolute",top:10,right:10,width:18,height:18,borderRadius:"50%",cursor:"pointer",
               background:f.on?C.teal:C.white,border:`1.5px solid ${f.on?C.teal:C.border}`,
               color:"#fff",fontSize:11,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center"}}>{f.on?"✓":""}</span>
           <div style={{fontSize:19,marginBottom:8}}>{cfg.icon}</div>
@@ -1139,17 +1076,16 @@ function ExteriorFinishingModule({ finishing, onChange, net, locked=false }) {
           <span style={{fontSize:16}}>{cfg.icon}</span>
           <span style={{fontSize:12.5,fontWeight:800,color:C.navy}}>{cfg.label}</span>
         </div>
-        {types.length>0&&<DropSel label="Type / Variant" value={f.type||types[0]?.id} onChange={v=>changeType(key,v)} options={types.map(t=>({value:t.id,label:t.label+(t.base?` (${t.base==="water"?"Water":"Oil"}-based)`:"")})) } style={{marginBottom:12}} disabled={locked}/>}
-        {f.type==="custom"&&<div style={{marginBottom:12}}><Inp label="Material Name" value={f.customName||""} onChange={v=>upF(key,"customName",v)} placeholder="Enter name..." disabled={locked}/></div>}
+        {types.length>0&&<DropSel label="Type / Variant" value={f.type||types[0]?.id} onChange={v=>changeType(key,v)} options={types.map(t=>({value:t.id,label:t.label+(t.base?` (${t.base==="water"?"Water":"Oil"}-based)`:"")})) } style={{marginBottom:12}}/>}
+        {f.type==="custom"&&<div style={{marginBottom:12}}><Inp label="Material Name" value={f.customName||""} onChange={v=>upF(key,"customName",v)} placeholder="Enter name..."/></div>}
         {selT?.base&&<div style={{background:selT.base==="water"?C.blueL:"#FFF7ED",borderRadius:10,padding:"7px 12px",marginBottom:12,fontSize:11,color:selT.base==="water"?C.blue:C.gold,fontWeight:600}}>{selT.base==="water"?"💧 Water-Based":"🛢 Oil-Based"}</div>}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
           <span style={{fontSize:11,color:C.gray,fontWeight:700}}>Area:</span>
-          {["Elevation Net","Custom"].map((lbl,i)=><button key={lbl} disabled={locked} onClick={()=>upF(key,"useRoom",i===0)} style={{padding:"5px 12px",borderRadius:20,fontSize:11,fontWeight:700,border:`1.5px solid ${(i===0?f.useRoom:!f.useRoom)?C.navy:C.border}`,background:(i===0?f.useRoom:!f.useRoom)?C.navy:C.white,color:(i===0?f.useRoom:!f.useRoom)?"#fff":C.gray,cursor:locked?"not-allowed":"pointer",opacity:locked?0.6:1}}>{lbl}</button>)}
+          {["Elevation Net","Custom"].map((lbl,i)=><button key={lbl} onClick={()=>upF(key,"useRoom",i===0)} style={{padding:"5px 12px",borderRadius:20,fontSize:11,fontWeight:700,border:`1.5px solid ${(i===0?f.useRoom:!f.useRoom)?C.navy:C.border}`,background:(i===0?f.useRoom:!f.useRoom)?C.navy:C.white,color:(i===0?f.useRoom:!f.useRoom)?"#fff":C.gray,cursor:"pointer"}}>{lbl}</button>)}
         </div>
-        {!f.useRoom&&<div style={{marginBottom:12}}><span style={LBL}>Custom Area (sf)</span><NumInp small value={f.area||0} onChange={v=>upF(key,"area",v)} disabled={locked}/></div>}
+        {!f.useRoom&&<div style={{marginBottom:12}}><span style={LBL}>Custom Area (sf)</span><NumInp small value={f.area||0} onChange={v=>upF(key,"area",v)}/></div>}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <div><span style={LBL}>Rate (₹/sf){locked?" 🔒":""}</span><NumInp small prefix="₹" value={f.rate||0} onChange={v=>upF(key,"rate",v)} disabled={locked}/></div>
-          <div><span style={LBL}>Coats</span><CoatStepper value={f.coats||1} onChange={v=>upF(key,"coats",v)} disabled={locked}/></div>
+          <div><span style={LBL}>Coats</span><CoatStepper value={f.coats||1} onChange={v=>upF(key,"coats",v)}/></div>
         </div>
         <div style={{background:"#F0FDFA",borderRadius:10,padding:"10px 14px",marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{fontSize:11,color:"#0D9488",fontWeight:600}}>{area.toFixed(1)} sf × ₹{f.rate||0} × {f.coats||1}</span>
@@ -2145,7 +2081,7 @@ const DW2_ITEM_PLACEHOLDERS = {
 // on itemType values, calculations, or persisted data. Falls back to the
 // existing emoji (DW2_ITEM_ICONS) for types with no photographed tile
 // (e.g. Custom Item).
-const ITEM_IMAGE_SPRITE = "/item-card-image's.png";
+const ITEM_IMAGE_SPRITE = "/item-card-image.s.png";
 const ITEM_IMAGE_GRID = { naturalW: 1536, naturalH: 1024, cellW: 1536/5, cellH: 1024/3 };
 const ITEM_IMAGE_MAP = {
   "Door":            { col:0, row:0 },
@@ -2312,7 +2248,7 @@ const FINISH_PREVIEW_MAP = {
 // key order (row-major, 5 per row). Purely visual: no effect on finishType
 // values or calculations. Falls back to the existing emoji for ids with no
 // photographed tile (custom).
-const FINISH_IMAGE_SPRITE = "/preview-card- image's.png";
+const FINISH_IMAGE_SPRITE = "/preview-card- image.s.png";
 const FINISH_IMAGE_GRID = { naturalW: 1536, naturalH: 1024, cellW: 1536/5, cellH: 1024/3 };
 const FINISH_IMAGE_ORDER = [
   "oil_paint","water_based","synthetic_enamel","high_gloss_enamel","pu_paint",
@@ -3274,11 +3210,15 @@ function buildMaterialConsumptionSummary(project) {
         const auto = calcConsumption(area, f.coats||1, c.coverage, c.wastage, c.packSize, c.ratePerL);
         const meta = finMeta[key];
         const typeLabel = meta?.types?.find(t=>t.id===f.type)?.label;
+        // Putty uses Kg, everything else Liters; use exact variant name, not paint product name
+        const isPutty = key === "putty";
+        const materialName = typeLabel || (meta?meta.label:key);
         raw.push({
-          category:"Interior", material: typeLabel || (meta?meta.label:key),
-          brand: r.brand||"", product: f.customName || product || "",
+          category:"Interior", material: materialName,
+          brand: (isPutty ? "" : (r.brand||"")), product: (isPutty ? "" : (f.customName || product || "")),
           area, coverage:c.coverage,
-          qty: c.overrideLitres ? (c.manualLitres||0) : auto.litresWithWaste, unit:"L",
+          qty: c.overrideLitres ? (c.manualLitres||0) : auto.litresWithWaste, unit: isPutty ? "Kg" : "L",
+          packSize: c.packSize || null,
         });
       });
     });
@@ -3300,11 +3240,14 @@ function buildMaterialConsumptionSummary(project) {
       const auto = calcConsumption(area, f.coats||1, c.coverage, c.wastage, c.packSize, c.ratePerL);
       const meta = extFinMeta[key];
       const typeLabel = meta?.types?.find(t=>t.id===f.type)?.label;
+      const isPutty = key === "putty";
+      const materialName = typeLabel || (meta?meta.label:key);
       raw.push({
-        category:"Exterior", material: typeLabel || (meta?meta.label:key),
-        brand: cfg.brand||"", product: f.customName || product || "",
+        category:"Exterior", material: materialName,
+        brand: (isPutty ? "" : (cfg.brand||"")), product: (isPutty ? "" : (f.customName || product || "")),
         area, coverage:c.coverage,
-        qty: c.overrideLitres ? (c.manualLitres||0) : auto.litresWithWaste, unit:"L",
+        qty: c.overrideLitres ? (c.manualLitres||0) : auto.litresWithWaste, unit: isPutty ? "Kg" : "L",
+        packSize: c.packSize || null,
       });
     });
   });
@@ -3462,27 +3405,51 @@ function MaterialConsumptionSummary({ project }) {
       📄 Download Material Consumption PDF
     </button>
 
-    {/* Purchase List — one row per unique product (same rows, already
-        deduped by Material+Brand+Product+Unit), vendor-facing columns only:
-        what to buy, how much, in what unit. Same data as the table above,
-        just formatted to hand off directly. */}
+    {/* Purchase List — grouped by category (Preparation, Topcoats, Wood/Metal),
+        commercial pack sizes, summary metrics at top. */}
     <div style={{marginTop:14}}>
       <div style={{fontSize:12,fontWeight:800,color:C.navy,marginBottom:6}}>🛒 Purchase List</div>
-      <div style={{border:`1.5px solid ${C.navy}22`,borderRadius:12,overflow:"hidden"}}>
-        <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-        <div style={{display:"grid",gridTemplateColumns:"1.3fr 0.9fr 1fr 0.8fr",minWidth:380,background:C.navy,padding:"6px 8px",fontSize:8.5,fontWeight:800,color:"#fff",textTransform:"uppercase",letterSpacing:"0.03em"}}>
-          <span>Material</span><span>Brand</span><span>Product</span><span style={{textAlign:"right"}}>Qty to Order</span>
-        </div>
-        {rows.map((r,i)=>(
-          <div key={i} style={{display:"grid",gridTemplateColumns:"1.3fr 0.9fr 1fr 0.8fr",minWidth:380,padding:"7px 8px",fontSize:10.5,borderTop:`1px solid ${C.border}`,alignItems:"center",background:i%2?"#FAFBFC":C.white}}>
-            <span style={{fontWeight:700,color:C.navy}}>{r.material}</span>
-            <span style={{color:"#555",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.brand||"-"}</span>
-            <span style={{color:"#888",fontSize:9.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.product||"-"}</span>
-            <span style={{textAlign:"right",fontWeight:800,color:C.orange}}>{r.qty.toFixed(r.unit==="rolls"?0:2)} {r.unit}</span>
+      {/* Summary metrics */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>
+        {[["Items", `${rows.length}`, C.navy], ["Total Qty", `${grandLitres>0?grandLitres.toFixed(1)+" L":""}${grandLitres>0&&grandRolls>0?" · ":""}${grandRolls>0?grandRolls.toFixed(0)+" rolls":""}`, C.orange], ["Categories", `${new Set(rows.map(r=>r.category)).size}`, C.teal]].map(([l,v,col])=>(
+          <div key={l} style={{background:"#F8FAFC",borderRadius:8,padding:"8px 6px",textAlign:"center",border:`1px solid ${col}22`}}>
+            <div style={{fontSize:9,color:C.gray,fontWeight:700}}>{l}</div>
+            <div style={{fontSize:13,fontWeight:800,color:col,marginTop:2}}>{v}</div>
           </div>
         ))}
-        </div>
       </div>
+      {/* Grouped by category */}
+      {(() => {
+        const GROUP_MAP = {
+          "Interior": "Preparation & Paints",
+          "Exterior": "Preparation & Paints",
+          "Joinery": "Wood / Metal",
+          "Texture": "Topcoats & Texture",
+          "Wallpaper": "Wallpaper",
+        };
+        const groups = {};
+        rows.forEach(r => {
+          const g = GROUP_MAP[r.category] || "Other";
+          if (!groups[g]) groups[g] = [];
+          groups[g].push(r);
+        });
+        const GROUP_ORDER = ["Preparation & Paints", "Wood / Metal", "Topcoats & Texture", "Wallpaper", "Other"];
+        return GROUP_ORDER.filter(g => groups[g]).map(g => (
+          <div key={g} style={{marginBottom:10}}>
+            <div style={{fontSize:10,fontWeight:800,color:C.navy,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.04em"}}>{g}</div>
+            <div style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+              {groups[g].map((r,i)=>(
+                <div key={i} style={{display:"grid",gridTemplateColumns:"1.3fr 0.9fr 1fr 0.8fr",minWidth:380,padding:"7px 8px",fontSize:10.5,borderTop:i>0?`1px solid ${C.border}`:"none",alignItems:"center",background:i%2?"#FAFBFC":C.white}}>
+                  <span style={{fontWeight:700,color:C.navy}}>{r.material}</span>
+                  <span style={{color:"#555",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.brand||"-"}</span>
+                  <span style={{color:"#888",fontSize:9.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.packSize?`${r.packSize}${r.unit==="Kg"?"Kg Bag":"L Bucket"}`:(r.product||"-")}</span>
+                  <span style={{textAlign:"right",fontWeight:800,color:C.orange}}>{r.qty.toFixed(r.unit==="rolls"?0:2)} {r.unit}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ));
+      })()}
       <button onClick={()=>generatePurchaseListPDF(project)}
         style={{width:"100%",marginTop:8,padding:"12px 0",minHeight:44,background:C.orange,color:"#fff",border:"none",borderRadius:12,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>
         📄 Download Purchase List PDF
@@ -6037,8 +6004,6 @@ export default function App() {
   // any other, same as a normal accordion. Replaces the five separate booleans used
   // through 3A/4B. UI-only, never persisted, reset to null on room switch below.
   const [paintDetailsOpen,setPaintDetailsOpen]=useState(null); // "package"|"brand"|"product"|"finish"|"labour"|null
-  const [isFinishesLocked,setIsFinishesLocked]=useState(true); // default: locked
-  const [showPinModal,setShowPinModal]=useState(false);
   const [showMasterRates,setShowMasterRates]=useState(false);
   const [masterRatesVersion,setMasterRatesVersion]=useState(0); // bump to force rate refresh
   // RUNTIME-FIX: project is null until login (useState(null) above, set only after
@@ -6221,9 +6186,11 @@ export default function App() {
   const statusText={ idle:"☁ Save", saving:"⏳…", auto:"⏳…", auto_ok:"✓ Auto", saved:"✓ Saved", error:"✗ Fail" };
   const FIN_ICONS={putty:"🪣",primer:"🧴",paint:"🎨",topcoat:"✨",oilPaint:"🛢",polish:"💅",texture:"🏔",wallpaper:"🖼"};
 
-  return <div style={{maxWidth:560,margin:"0 auto",background:C.bg,minHeight:"100vh",fontFamily:"system-ui,-apple-system,sans-serif",display:"flex",flexDirection:"column"}}>
+  return <div className="app-content-wrapper" style={{maxWidth:560,margin:"0 auto",background:C.bg,minHeight:"100vh",fontFamily:"system-ui,-apple-system,sans-serif",display:"flex",flexDirection:"column"}}>
     {/* Header */}
+    <div className="app-header">
     <Header onNewProject={handleNewProject} onLogout={()=>setUser(null)} onMasterRates={()=>setShowMasterRates(true)} />
+    </div>
 
     {/* Main scrollable content */}
     <div style={{flex:1,overflowY:"auto",paddingBottom:"calc(210px + env(safe-area-inset-bottom, 0px))"}}>
@@ -6247,7 +6214,7 @@ export default function App() {
 
         return <>
         {/* ── WIZARD HEADER ─────────────────────────────────── */}
-        <div style={{background:C.white,borderBottom:`1px solid ${C.border}`,padding:"14px 16px 0"}}>
+        <div className="step-bar-container" style={{background:C.white,borderBottom:`1px solid ${C.border}`,padding:"14px 16px 0"}}>
 
           {/* Progress bar */}
           <div style={{height:3,background:C.border,borderRadius:2,marginBottom:14,overflow:"hidden"}}>
@@ -6782,28 +6749,13 @@ export default function App() {
                     {isOpen&&<div style={{paddingBottom:12}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                         <div style={{fontSize:10.5,color:C.gray}}>Net area: <b style={{color:C.orange}}>{calcNet(room).toFixed(2)} sf</b></div>
-                        <button onClick={()=>{ if(isFinishesLocked) setShowPinModal(true); else setIsFinishesLocked(true); }}
-                          style={{display:"flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:20,
-                            fontSize:11,fontWeight:700,cursor:"pointer",
-                            border:`1.5px solid ${isFinishesLocked?C.orange:C.border}`,
-                            background:isFinishesLocked?C.orangeL:C.white,
-                            color:isFinishesLocked?C.orange:C.gray,transition:"all 0.15s"}}>
-                          <span style={{fontSize:13}}>{isFinishesLocked?"🔒":"🔓"}</span>
-                          {isFinishesLocked?"Locked":"Unlocked"}
-                        </button>
                       </div>
-                      {isFinishesLocked&&<div style={{background:"#FEF3C7",border:`1.5px solid #F59E0B44`,borderRadius:8,
-                        padding:"7px 11px",marginBottom:10,display:"flex",alignItems:"center",gap:7}}>
-                        <span style={{fontSize:13}}>🔒</span>
-                        <span style={{fontSize:11,fontWeight:700,color:"#B45309"}}>Finishes & Budgeting Rates are Locked.</span>
-                      </div>}
                       <FinishingModule
                         finishing={fin}
                         onChange={f2=>upRoom({...room,finishing:f2})}
                         net={calcNet(room)}
                         visibleKeys={["putty","primer","paint"]}
                         showNetLabel={false}
-                        locked={isFinishesLocked}
                       />
                       <button onClick={()=>setPaintMoreFinishesOpen(v=>!v)}
                         style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",
@@ -6817,7 +6769,6 @@ export default function App() {
                         net={calcNet(room)}
                         visibleKeys={["topcoat","oilPaint","polish","texture","wallpaper"]}
                         showNetLabel={false}
-                        locked={isFinishesLocked}
                       />}
                     </div>}
                   </div>;
@@ -6839,8 +6790,8 @@ export default function App() {
                     {isOpen&&<div style={{paddingBottom:8}}>
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
                         {[["sqft","📐","Rate/sf"],["daily","👷","Daily Rate"]].map(([v,icon,label])=>(
-                          <button key={v} disabled={isFinishesLocked} onClick={()=>{if(!isFinishesLocked)upRoom({...room,labourMethod:v})}}
-                            style={{padding:"10px 8px",borderRadius:10,fontSize:12,fontWeight:700,cursor:isFinishesLocked?"not-allowed":"pointer",opacity:isFinishesLocked?0.6:1,
+                          <button key={v} onClick={()=>upRoom({...room,labourMethod:v})}
+                            style={{padding:"10px 8px",borderRadius:10,fontSize:12,fontWeight:700,cursor:"pointer",
                               border:`2px solid ${room.labourMethod===v?C.orange:C.border}`,
                               background:room.labourMethod===v?C.orangeL:C.white,
                               color:room.labourMethod===v?C.orange:C.gray,
@@ -6850,24 +6801,24 @@ export default function App() {
                         ))}
                       </div>
                       {room.labourMethod==="sqft"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                        <div><span style={LBL}>WITH MATERIALS (₹/sf)</span><NumInp small prefix="₹" value={room.labourRate||0} onChange={v=>upRoom({...room,labourRate:v})} disabled={isFinishesLocked}/></div>
-                        <div><span style={LBL}>LABOUR ONLY (₹/sf)</span><NumInp small prefix="₹" value={room.labourRateExcl||0} onChange={v=>upRoom({...room,labourRateExcl:v})} disabled={isFinishesLocked}/></div>
+                        <div><span style={LBL}>WITH MATERIALS (₹/sf)</span><NumInp small prefix="₹" value={room.labourRate||0} onChange={v=>upRoom({...room,labourRate:v})}/></div>
+                        <div><span style={LBL}>LABOUR ONLY (₹/sf)</span><NumInp small prefix="₹" value={room.labourRateExcl||0} onChange={v=>upRoom({...room,labourRateExcl:v})}/></div>
                       </div>}
                       {room.labourMethod==="daily"&&<>
                         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
-                          <div><span style={LBL}>DAILY RATE (₹)</span><NumInp small prefix="₹" value={room.dailyRate||0} onChange={v=>upRoom({...room,dailyRate:v})} disabled={isFinishesLocked}/></div>
+                          <div><span style={LBL}>DAILY RATE (₹)</span><NumInp small prefix="₹" value={room.dailyRate||0} onChange={v=>upRoom({...room,dailyRate:v})}/></div>
                           <div><span style={LBL}>WORKERS</span>
                             <div style={{display:"flex",alignItems:"center",gap:4,marginTop:2}}>
-                              <button disabled={isFinishesLocked} onClick={()=>{if(!isFinishesLocked)upRoom({...room,workers:Math.max(1,(room.workers||1)-1)})}} style={{width:34,height:38,borderRadius:8,border:`1px solid ${C.border}`,background:C.white,cursor:isFinishesLocked?"not-allowed":"pointer",opacity:isFinishesLocked?0.6:1,fontSize:18,fontWeight:700,color:C.red}}>−</button>
+                              <button onClick={()=>upRoom({...room,workers:Math.max(1,(room.workers||1)-1)})} style={{width:34,height:38,borderRadius:8,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",fontSize:18,fontWeight:700,color:C.red}}>−</button>
                               <span style={{fontSize:16,fontWeight:800,minWidth:24,textAlign:"center",color:C.navy}}>{room.workers||1}</span>
-                              <button disabled={isFinishesLocked} onClick={()=>{if(!isFinishesLocked)upRoom({...room,workers:(room.workers||1)+1})}} style={{width:34,height:38,borderRadius:8,border:`1px solid ${C.border}`,background:C.white,cursor:isFinishesLocked?"not-allowed":"pointer",opacity:isFinishesLocked?0.6:1,fontSize:18,fontWeight:700,color:C.green}}>+</button>
+                              <button onClick={()=>upRoom({...room,workers:(room.workers||1)+1})} style={{width:34,height:38,borderRadius:8,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",fontSize:18,fontWeight:700,color:C.green}}>+</button>
                             </div>
                           </div>
                           <div><span style={LBL}>DAYS</span>
                             <div style={{display:"flex",alignItems:"center",gap:4,marginTop:2}}>
-                              <button disabled={isFinishesLocked} onClick={()=>{if(!isFinishesLocked)upRoom({...room,days:Math.max(1,(room.days||1)-1)})}} style={{width:34,height:38,borderRadius:8,border:`1px solid ${C.border}`,background:C.white,cursor:isFinishesLocked?"not-allowed":"pointer",opacity:isFinishesLocked?0.6:1,fontSize:18,fontWeight:700,color:C.red}}>−</button>
+                              <button onClick={()=>upRoom({...room,days:Math.max(1,(room.days||1)-1)})} style={{width:34,height:38,borderRadius:8,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",fontSize:18,fontWeight:700,color:C.red}}>−</button>
                               <span style={{fontSize:16,fontWeight:800,minWidth:24,textAlign:"center",color:C.navy}}>{room.days||1}</span>
-                              <button disabled={isFinishesLocked} onClick={()=>{if(!isFinishesLocked)upRoom({...room,days:(room.days||1)+1})}} style={{width:34,height:38,borderRadius:8,border:`1px solid ${C.border}`,background:C.white,cursor:isFinishesLocked?"not-allowed":"pointer",opacity:isFinishesLocked?0.6:1,fontSize:18,fontWeight:700,color:C.green}}>+</button>
+                              <button onClick={()=>upRoom({...room,days:(room.days||1)+1})} style={{width:34,height:38,borderRadius:8,border:`1px solid ${C.border}`,background:C.white,cursor:"pointer",fontSize:18,fontWeight:700,color:C.green}}>+</button>
                             </div>
                           </div>
                         </div>
@@ -7764,8 +7715,6 @@ export default function App() {
     })()}
 
     {showInvoice&&<InvoiceModal project={project} totals={totals} onClose={()=>setShowInvoice(false)} />}
-
-    {showPinModal&&<PinEntryModal onSuccess={()=>{ setIsFinishesLocked(false); setShowPinModal(false); }} onClose={()=>setShowPinModal(false)} />}
 
     {showMasterRates&&<MasterRatesModal onClose={()=>setShowMasterRates(false)} onSaved={()=>setMasterRatesVersion(v=>v+1)} />}
   </div>;

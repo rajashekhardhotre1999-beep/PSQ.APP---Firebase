@@ -21,6 +21,22 @@ button, input, select, textarea {
   font-family: inherit;
 }
 
+/* ── Desktop spacing compaction ── */
+@media (min-width: 768px) {
+  .app-header {
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
+  .step-bar-container {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+  }
+  .app-content-wrapper {
+    flex: 1;
+    overflow-y: auto;
+  }
+}
+
 /* ── Print: only the Invoice modal body is printed ── */
 @media print {
   body * { visibility: hidden !important; }
