@@ -3217,7 +3217,7 @@ function buildMaterialConsumptionSummary(project) {
           category:"Interior", material: materialName,
           brand: (isPutty ? "" : (r.brand||"")), product: (isPutty ? "" : (f.customName || product || "")),
           area, coverage:c.coverage,
-          qty: c.overrideLitres ? (c.manualLitres||0) : auto.litresWithWaste, unit: isPutty ? "Kg" : "L",
+          qty: c.overrideLitres ? (c.manualLitres||0) : auto.litresWithWaste, unit: isPutty ? "Kg" : "Liters",
           packSize: c.packSize || null,
         });
       });
@@ -3246,7 +3246,7 @@ function buildMaterialConsumptionSummary(project) {
         category:"Exterior", material: materialName,
         brand: (isPutty ? "" : (cfg.brand||"")), product: (isPutty ? "" : (f.customName || product || "")),
         area, coverage:c.coverage,
-        qty: c.overrideLitres ? (c.manualLitres||0) : auto.litresWithWaste, unit: isPutty ? "Kg" : "L",
+        qty: c.overrideLitres ? (c.manualLitres||0) : auto.litresWithWaste, unit: isPutty ? "Kg" : "Liters",
         packSize: c.packSize || null,
       });
     });
@@ -3267,7 +3267,8 @@ function buildMaterialConsumptionSummary(project) {
       category:"Joinery", material: finT?finT.label:(it.finishType||"custom"),
       brand: it.brand||"", product: it.product||"",
       area: net, coverage:cons.coverage,
-      qty: cons.overrideLitres ? (cons.manualLitres||0) : auto.litresWithWaste, unit:"L",
+      qty: cons.overrideLitres ? (cons.manualLitres||0) : auto.litresWithWaste, unit:"Liters",
+      packSize: cons.packSize || null,
     });
     // Metal Primer stage (Stage 1) — separate purchase row from the Enamel
     // Top Coat row above, same measured area reused, same calcConsumption().
@@ -3279,7 +3280,8 @@ function buildMaterialConsumptionSummary(project) {
         category:"Joinery", material: pfinT?pfinT.label:"Metal Primer",
         brand: it.primer.brand||"", product: it.primer.product||"",
         area: net, coverage:pcons.coverage,
-        qty: pcons.overrideLitres ? (pcons.manualLitres||0) : pauto.litresWithWaste, unit:"L",
+        qty: pcons.overrideLitres ? (pcons.manualLitres||0) : pauto.litresWithWaste, unit:"Liters",
+        packSize: pcons.packSize || null,
       });
     }
   });
@@ -3292,7 +3294,8 @@ function buildMaterialConsumptionSummary(project) {
       category:"Joinery", material: finT?finT.label:(item.finishId||"custom"),
       brand: item.brand||"", product: item.product||"",
       area: net, coverage:cons.coverage,
-      qty: cons.overrideLitres ? (cons.manualLitres||0) : auto.litresWithWaste, unit:"L",
+      qty: cons.overrideLitres ? (cons.manualLitres||0) : auto.litresWithWaste, unit:"Liters",
+      packSize: cons.packSize || null,
     });
   });
 
@@ -3308,7 +3311,8 @@ function buildMaterialConsumptionSummary(project) {
       category:"Texture",
       material: (it.textureType==="Custom"?(it.customType||"Custom Texture"):it.textureType) || "Texture Material",
       brand: it.brand||"", product: it.productName||"",
-      area:c.area, coverage: it.coverage||null, qty:c.litresWithWaste, unit:"L",
+      area:c.area, coverage: it.coverage||null, qty:c.litresWithWaste, unit:"Liters",
+      packSize: it.packSize || null,
     });
   });
 
@@ -3365,7 +3369,7 @@ function buildMaterialConsumptionSummary(project) {
 function MaterialConsumptionSummary({ project }) {
   const { rows, rawCount } = buildMaterialConsumptionSummary(project);
   if (rows.length===0) return null;
-  const grandLitres = rows.filter(r=>r.unit==="L").reduce((s,r)=>s+r.qty,0);
+  const grandLitres = rows.filter(r=>r.unit==="Liters").reduce((s,r)=>s+r.qty,0);
   const grandRolls = rows.filter(r=>r.unit==="rolls").reduce((s,r)=>s+r.qty,0);
   return <div style={CARD}>
     <div style={{fontSize:13,fontWeight:800,color:C.navy,marginBottom:10}}>🧴 Material Consumption</div>
@@ -3418,22 +3422,23 @@ function MaterialConsumptionSummary({ project }) {
           </div>
         ))}
       </div>
-      {/* Grouped by category */}
+      {/* Grouped by material type: Putty & Primer, Paints, Joinery, Texture, Wallpaper */}
       {(() => {
-        const GROUP_MAP = {
-          "Interior": "Preparation & Paints",
-          "Exterior": "Preparation & Paints",
-          "Joinery": "Wood / Metal",
-          "Texture": "Topcoats & Texture",
-          "Wallpaper": "Wallpaper",
+        const groupForRow = (r) => {
+          const mat = (r.material||"").toLowerCase();
+          if (mat.includes("putty") || mat.includes("primer") || mat.includes("metal primer")) return "Putty & Primer";
+          if (r.category==="Joinery") return "Joinery / Wood & Metal";
+          if (r.category==="Texture") return "Texture";
+          if (r.category==="Wallpaper") return "Wallpaper";
+          return "Paints";
         };
         const groups = {};
         rows.forEach(r => {
-          const g = GROUP_MAP[r.category] || "Other";
+          const g = groupForRow(r);
           if (!groups[g]) groups[g] = [];
           groups[g].push(r);
         });
-        const GROUP_ORDER = ["Preparation & Paints", "Wood / Metal", "Topcoats & Texture", "Wallpaper", "Other"];
+        const GROUP_ORDER = ["Putty & Primer", "Paints", "Joinery / Wood & Metal", "Texture", "Wallpaper", "Other"];
         return GROUP_ORDER.filter(g => groups[g]).map(g => (
           <div key={g} style={{marginBottom:10}}>
             <div style={{fontSize:10,fontWeight:800,color:C.navy,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.04em"}}>{g}</div>
@@ -3443,6 +3448,7 @@ function MaterialConsumptionSummary({ project }) {
                   <span style={{fontWeight:700,color:C.navy}}>{r.material}</span>
                   <span style={{color:"#555",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.brand||"-"}</span>
                   <span style={{color:"#888",fontSize:9.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.packSize?`${r.packSize}${r.unit==="Kg"?"Kg Bag":"L Bucket"}`:(r.product||"-")}</span>
+                  <span style={{fontSize:8,color:C.gray,display:"none"}}>{r.category}</span>
                   <span style={{textAlign:"right",fontWeight:800,color:C.orange}}>{r.qty.toFixed(r.unit==="rolls"?0:2)} {r.unit}</span>
                 </div>
               ))}
@@ -7184,7 +7190,7 @@ export default function App() {
             <div style={{...CARD,marginBottom:12}}>
               <div style={{fontSize:12,fontWeight:800,color:C.navy,marginBottom:8}}>PDF Logo</div>
               <div style={{display:"flex",alignItems:"center",gap:12}}>
-                <div style={{width:140,height:50,borderRadius:6,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",background:"#fff",padding:6}}><img src="/Paintship W-W-Logo.png" alt="PaintShip" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}/></div>
+                <div style={{width:140,height:50,borderRadius:6,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",background:"#fff",padding:6}}><img src="/Paintship W-Logo.png" alt="PaintShip" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}/></div>
                 <div style={{fontSize:11,color:"#888"}}>Official PaintShip logo — used on every quotation.</div>
               </div>
             </div>
